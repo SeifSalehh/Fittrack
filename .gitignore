@@ -1,0 +1,46 @@
+
+# Node / Expo
+node_modules/
+.expo/
+.expo-shared/
+dist/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Env & local configs
+.env
+.env.*
+!.env.example
+app.config.local.js
+
+# iOS / Android builds
+ios/build/
+ios/Pods/
+ios/*.xcodeproj/*
+!ios/*.xcodeproj/project.pbxproj
+ios/*.xcworkspace/*
+!ios/*.xcworkspace/contents.xcworkspacedata
+android/.gradle/
+android/.idea/
+android/app/build/
+android/build/
+
+# Credentials
+**/*.jks
+**/*.keystore
+**/*.keystore.properties
+**/credentials.json
+**/*.p8
+**/*.p12
+**/GoogleService-Info.plist
+**/google-services.json
+
+# OS/editor
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
