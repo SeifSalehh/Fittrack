@@ -9,7 +9,7 @@ export const colors = {
   accent: '#1DB954',
   accentDim: '#169947',
   border: '#2A2A2A',
-  danger: '#FF5A5F'
+  danger: '#FF5A5F',
 };
 
 export const Screen = ({ children, style }) => (
@@ -26,9 +26,9 @@ export const Card = ({ children, style }) => (
         borderRadius: 16,
         padding: 14,
         borderWidth: 1,
-        borderColor: colors.border
+        borderColor: colors.border,
       },
-      style
+      style,
     ]}
   >
     {children}
@@ -40,15 +40,16 @@ export const H1 = ({ children, style }) => (
     {children}
   </Text>
 );
+
 export const H2 = ({ children, style }) => (
   <Text style={[{ color: colors.text, fontSize: 18, fontWeight: '600' }, style]}>
     {children}
   </Text>
 );
+
 export const P = ({ children, style }) => (
   <Text style={[{ color: colors.subtext, fontSize: 14 }, style]}>{children}</Text>
 );
-
 
 export const Button = ({ title, onPress, variant = 'solid', disabled }) => {
   const base = {
@@ -58,19 +59,26 @@ export const Button = ({ title, onPress, variant = 'solid', disabled }) => {
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: 6,
-    borderWidth: 1
+    borderWidth: 1,
   };
-  const styles =
-    variant === 'outline'
-      ? { backgroundColor: 'transparent', borderColor: colors.accent }
-      : { backgroundColor: disabled ? colors.accentDim : colors.accent, borderColor: 'transparent' };
+
+  const isOutline = variant === 'outline';
+
+  const styles = isOutline
+    ? { backgroundColor: 'transparent', borderColor: colors.accent }
+    : {
+        backgroundColor: disabled ? colors.accentDim : colors.accent,
+        borderColor: 'transparent',
+      };
+
+  const textColor = isOutline ? colors.accent : '#000';
 
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
       style={({ pressed }) => [base, styles, pressed && { opacity: 0.8 }]}
     >
-      <Text style={{ color: '#000', fontWeight: '700' }}>{title}</Text>
+      <Text style={{ color: textColor, fontWeight: '700' }}>{title}</Text>
     </Pressable>
   );
 };
