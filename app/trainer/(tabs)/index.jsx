@@ -1,39 +1,36 @@
 // app/trainer/(tabs)/index.jsx
 import React, { useEffect, useState, useCallback } from 'react';
 import dayjs from 'dayjs';
-import { Alert, FlatList, RefreshControl, View } from 'react-native';
+import { Alert, FlatList, RefreshControl, View, ActivityIndicator } from 'react-native';
 import { router, Link, useFocusEffect } from 'expo-router';
 import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../lib/AuthProvider';
 import { Screen, Card, H1, H2, P, Button, colors } from '../../../components/UI';
 import DonutRevenueMinimal from '../../../components/DonutRevenueMinimal';
 
 export default function TrainerHome() {
+  const { session, loading } = useAuth(); // 👈 global auth state
   const [todaySessions, setTodaySessions] = useState([]);
   const [revenue, setRevenue] = useState(0);
   const [clientCount, setClientCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [monthlyGoal, setMonthlyGoal] = useState(1000); // TODO: fetch per-trainer
 
-  const getUser = async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    return data.user;
-  };
+  const userId = session?.user?.id;
 
   const load = useCallback(async () => {
     try {
+      if (!userId) return;
       setRefreshing(true);
-      const user = await getUser();
-      if (!user) return;
 
       const startISO = dayjs().startOf('day').toISOString();
-      const endISO   = dayjs().endOf('day').toISOString();
+      const endISO = dayjs().endOf('day').toISOString();
 
       // Today’s sessions
       const { data: sess, error: e1 } = await supabase
         .from('sessions')
         .select('id, start_at, end_at, status, client_id, package_id, trainer_id')
-        .eq('trainer_id', user.id)
+        .eq('trainer_id', userId)
         .gte('start_at', startISO)
         .lt('start_at', endISO)
         .order('start_at', { ascending: true });
@@ -42,11 +39,11 @@ export default function TrainerHome() {
 
       // Month revenue
       const mStart = dayjs().startOf('month').toISOString();
-      const mEnd   = dayjs().endOf('month').toISOString();
+      const mEnd = dayjs().endOf('month').toISOString();
       const { data: pays, error: e2 } = await supabase
         .from('payments')
         .select('amount, paid_at, trainer_id')
-        .eq('trainer_id', user.id)
+        .eq('trainer_id', userId)
         .gte('paid_at', mStart)
         .lt('paid_at', mEnd);
       if (e2) throw e2;
@@ -56,7 +53,7 @@ export default function TrainerHome() {
       const { count, error: e3 } = await supabase
         .from('clients')
         .select('id', { count: 'exact', head: true })
-        .eq('trainer_id', user.id);
+        .eq('trainer_id', userId);
       if (e3) throw e3;
       setClientCount(count ?? 0);
     } catch (err) {
@@ -64,35 +61,36 @@ export default function TrainerHome() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [userId]);
 
-  useEffect(() => { load(); }, [load]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  // realtime re-fetch for this trainer’s sessions + log payload
   useEffect(() => {
-    let channel;
-    (async () => {
-      const user = await getUser();
-      if (!user) return;
-      channel = supabase
-        .channel('trainer-sessions')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'sessions', filter: `trainer_id=eq.${user.id}` },
-          (payload) => {
-            console.log('sessions change ▶️', payload);
-            load();
-          }
-        )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log('Realtime subscribed to trainer sessions');
-          }
-        });
-    })();
-    return () => { if (channel) supabase.removeChannel(channel); };
-  }, [load]);
+    if (userId) load();
+  }, [userId, load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (userId) load();
+    }, [userId, load])
+  );
+
+  // realtime re-fetch for this trainer’s sessions
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel('trainer-sessions')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sessions', filter: `trainer_id=eq.${userId}` },
+        (payload) => {
+          console.log('sessions change ▶️', payload);
+          load();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, load]);
 
   async function completeSession(sessionId, clientId) {
     try {
@@ -131,6 +129,10 @@ export default function TrainerHome() {
     router.replace('/auth/sign-in');
   }
 
+  // 🛑 Handle loading & missing session gracefully
+  if (loading) return <ActivityIndicator style={{ flex: 1, alignSelf: 'center' }} />;
+  if (!session) return null; // or <Redirect href="/auth/sign-in" />
+
   return (
     <Screen>
       {/* Header + quick actions */}
@@ -149,7 +151,7 @@ export default function TrainerHome() {
         </View>
       </Card>
 
-      {/* KPIs: Clients + Monthly revenue (minimal donut) */}
+      {/* KPIs: Clients + Monthly revenue */}
       <View style={{ flexDirection:'row', gap:12, marginBottom: 12 }}>
         <Card style={{ flex:1, minHeight: 170, justifyContent: 'center' }}>
           <H2>Clients</H2>
