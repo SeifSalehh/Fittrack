@@ -507,15 +507,28 @@ export default function SessionsTab() {
               />
 
               <Button
-                title="Add payment (coming soon)"
-                variant="outline"
-                onPress={() =>
-                  Alert.alert(
-                    'Coming soon',
-                    'Payment & revenue actions will live here.'
-                  )
+                title={
+                  selectedSession?.is_paid ? 'Already paid' : 'Add payment'
                 }
+                variant={selectedSession?.is_paid ? 'outline' : 'solid'}
+                disabled={!!selectedSession?.is_paid}
+                onPress={() => {
+                  if (!selectedSession) return;
+                  if (selectedSession.is_paid) return;
+
+                  router.push({
+                    pathname: '/trainer/payments/new',
+                    params: {
+                      sessionId: selectedSession.id,
+                      clientId: selectedSession.client_id,
+                      // amount: selectedSession.price ?? '0', // later if you add price
+                    },
+                  });
+
+                  closeSheet();
+                }}
               />
+
               <Button
                 title="Close"
                 variant="ghost"
