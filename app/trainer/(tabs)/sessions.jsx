@@ -227,6 +227,19 @@ export default function SessionsTab() {
     await updateStatus(selectedSession.id, 'pending');
   };
 
+  const handleRescheduleFromSheet = () => {
+    if (!selectedSession) return;
+
+    // Navigate to Calendar with reschedule mode
+    router.push({
+      pathname: '/trainer/calendar',
+      params: { rescheduleSessionId: selectedSession.id },
+    });
+
+    // Close the bottom sheet
+    closeSheet();
+  };
+
   const renderSectionHeader = ({ section: { title, data } }) => (
     <View style={{ marginTop: 14, marginBottom: 8, paddingHorizontal: 2 }}>
       <H2>{title}</H2>
@@ -488,15 +501,11 @@ export default function SessionsTab() {
                 onPress={handleViewClient}
               />
               <Button
-                title="Edit / reschedule (coming soon)"
+                title="Reschedule session"
                 variant="outline"
-                onPress={() =>
-                  Alert.alert(
-                    'Coming soon',
-                    'Editing & rescheduling will be added here.'
-                  )
-                }
+                onPress={handleRescheduleFromSheet}
               />
+
               <Button
                 title="Add payment (coming soon)"
                 variant="outline"

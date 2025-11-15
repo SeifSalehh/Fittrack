@@ -13,6 +13,7 @@ import * as Calendar from 'expo-calendar';
 import * as Notifications from 'expo-notifications';
 import { Calendar as RNCalendar } from 'react-native-calendars';
 import dayjs from 'dayjs';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen, Card, H1, H2, P, Button, colors } from '../../../components/UI';
 import { supabase } from '../../../lib/supabase';
 
@@ -33,11 +34,21 @@ export default function TrainerCalendar() {
   const backdropAnim = useMemo(() => new Animated.Value(0), []);
 
   // ─────────────────────────────────────
+  // Reschedule via URL param
+  // ─────────────────────────────────────
+  const router = useRouter();
+  const { rescheduleSessionId } = useLocalSearchParams();
+  const rescheduleId = rescheduleSessionId ? String(rescheduleSessionId) : null;
+  const isRescheduling = !!rescheduleId;
+
+  // ─────────────────────────────────────
   // Load sessions for this trainer
   // ─────────────────────────────────────
   const load = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data, error } = await supabase
@@ -53,7 +64,9 @@ export default function TrainerCalendar() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // ─────────────────────────────────────
   // Device calendar + notifications setup
@@ -66,12 +79,16 @@ export default function TrainerCalendar() {
       if (nStatus !== 'granted') Alert.alert('Notification permission needed');
 
       const all = await Calendar.getCalendarsAsync();
-      const existing = all.find(c => c.title === 'FitTrack (Trainer)');
-      if (existing) { setDeviceCalendarId(existing.id); return; }
+      const existing = all.find((c) => c.title === 'FitTrack (Trainer)');
+      if (existing) {
+        setDeviceCalendarId(existing.id);
+        return;
+      }
 
-      const src = Platform.OS === 'ios'
-        ? (await Calendar.getDefaultCalendarAsync()).source
-        : { isLocalAccount: true, name: 'FitTrack (Trainer)' };
+      const src =
+        Platform.OS === 'ios'
+          ? (await Calendar.getDefaultCalendarAsync()).source
+          : { isLocalAccount: true, name: 'FitTrack (Trainer)' };
 
       const id = await Calendar.createCalendarAsync({
         title: 'FitTrack (Trainer)',
@@ -95,13 +112,18 @@ export default function TrainerCalendar() {
       await Calendar.createEventAsync(deviceCalendarId, {
         title: `FitTrack: ${label}${who}`,
         startDate: new Date(s.start_at),
-        endDate: new Date(s.end_at || dayjs(s.start_at).add(1, 'hour').toDate()),
+        endDate: new Date(
+          s.end_at || dayjs(s.start_at).add(1, 'hour').toDate()
+        ),
         notes: `Status: ${s.status}`,
       });
       const trigger = dayjs(s.start_at).subtract(60, 'minute').toDate();
       if (trigger > new Date()) {
         await Notifications.scheduleNotificationAsync({
-          content: { title: 'Upcoming session', body: `${dayjs(s.start_at).format('HH:mm')} • ${label}${who}` },
+          content: {
+            title: 'Upcoming session',
+            body: `${dayjs(s.start_at).format('HH:mm')} • ${label}${who}`,
+          },
           trigger,
         });
       }
@@ -185,7 +207,11 @@ export default function TrainerCalendar() {
   const rowHeight = 48;
 
   const hoursRange = useMemo(
-    () => Array.from({ length: dayEndHour - dayStartHour + 1 }, (_, i) => dayStartHour + i),
+    () =>
+      Array.from(
+        { length: dayEndHour - dayStartHour + 1 },
+        (_, i) => dayStartHour + i
+      ),
     []
   );
 
@@ -200,7 +226,8 @@ export default function TrainerCalendar() {
   };
 
   const handleNewSession = () => {
-    Alert.alert('New session', 'We will wire this up to a create-session flow next.');
+    // navigate to add session screen
+    router.push('/trainer/sessions/new');
   };
 
   const shiftWeek = (direction) => {
@@ -256,6 +283,49 @@ export default function TrainerCalendar() {
     ]).start(() => {
       setSelectedSession(null);
     });
+  };
+
+  // 🔁 Reschedule handler: move session to selected day + chosen hour
+  const handleRescheduleToHour = async (hour24) => {
+    if (!isRescheduling) return;
+
+    try {
+      const base = dayjs(selected)
+        .hour(hour24)
+        .minute(0)
+        .second(0)
+        .millisecond(0);
+
+      // disallow rescheduling into the past
+      if (base.isBefore(dayjs())) {
+        Alert.alert('Invalid time', 'You cannot reschedule to a past time.');
+        return;
+      }
+
+      const newStart = base.toISOString();
+      const newEnd = base.add(1, 'hour').toISOString();
+
+      const { error } = await supabase
+        .from('sessions')
+        .update({
+          start_at: newStart,
+          end_at: newEnd,
+        })
+        .eq('id', rescheduleId);
+
+      if (error) throw error;
+
+      Alert.alert(
+        'Session rescheduled',
+        `Moved to ${base.format('ddd, D MMM HH:mm')}`
+      );
+
+      // go back to the previous screen (likely Sessions tab)
+      router.back();
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'Could not reschedule session.');
+    }
   };
 
   // ─────────────────────────────────────
@@ -349,6 +419,24 @@ export default function TrainerCalendar() {
             )}
           </View>
         </View>
+
+        {/* Reschedule banner */}
+        {isRescheduling && (
+          <Card
+            style={{
+              marginTop: 10,
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+            }}
+          >
+            <P style={{ fontSize: 13, fontWeight: '600' }}>
+              Rescheduling session
+            </P>
+            <P style={{ fontSize: 12, marginTop: 2, color: colors.subtext }}>
+              Switch to Day view and tap a time slot to move this session.
+            </P>
+          </Card>
+        )}
 
         {/* Mini summary chips */}
         <View style={{ flexDirection: 'row', marginTop: 8 }}>
@@ -475,6 +563,22 @@ export default function TrainerCalendar() {
                     />
                   ))}
 
+                  {/* Reschedule hit areas (only when rescheduling) */}
+                  {isRescheduling &&
+                    hoursRange.map((h) => (
+                      <Pressable
+                        key={`slot-${h}`}
+                        onPress={() => handleRescheduleToHour(h)}
+                        style={{
+                          position: 'absolute',
+                          top: (h - dayStartHour) * 60 * minuteHeight,
+                          left: 0,
+                          right: 0,
+                          height: 60 * minuteHeight,
+                        }}
+                      />
+                    ))}
+
                   {/* Session blocks */}
                   {daySessions.map((s) => {
                     const start = dayjs(s.start_at);
@@ -487,7 +591,10 @@ export default function TrainerCalendar() {
                     let startMinutes = start.diff(windowStart, 'minute');
                     let durationMinutes = end.diff(start, 'minute');
 
-                    startMinutes = Math.max(0, Math.min(startMinutes, dayWindowMinutes));
+                    startMinutes = Math.max(
+                      0,
+                      Math.min(startMinutes, dayWindowMinutes)
+                    );
                     durationMinutes = Math.max(
                       30,
                       Math.min(durationMinutes, dayWindowMinutes - startMinutes)
@@ -506,6 +613,7 @@ export default function TrainerCalendar() {
                       <Pressable
                         key={s.id}
                         onPress={() => openSessionPopup(s)}
+                        disabled={isRescheduling} // prevent conflict with reschedule taps
                         style={{
                           position: 'absolute',
                           top,
@@ -548,7 +656,8 @@ export default function TrainerCalendar() {
                 <P style={{ fontSize: 18 }}>{'‹'}</P>
               </Pressable>
               <P style={{ fontSize: 13 }}>
-                Week of {weekDays[0].format('D MMM')} – {weekDays[6].format('D MMM')}
+                Week of {weekDays[0].format('D MMM')} –{' '}
+                {weekDays[6].format('D MMM')}
               </P>
               <Pressable onPress={() => shiftWeek(1)} style={{ padding: 6 }}>
                 <P style={{ fontSize: 18 }}>{'›'}</P>
@@ -578,8 +687,12 @@ export default function TrainerCalendar() {
                           marginHorizontal: 4,
                           borderRadius: 999,
                           borderWidth: 1,
-                          borderColor: isSelectedDay ? colors.accent : colors.border,
-                          backgroundColor: isSelectedDay ? colors.accent : 'transparent',
+                          borderColor: isSelectedDay
+                            ? colors.accent
+                            : colors.border,
+                          backgroundColor: isSelectedDay
+                            ? colors.accent
+                            : 'transparent',
                           opacity: pressed ? 0.85 : 1,
                         },
                       ]}
@@ -604,18 +717,22 @@ export default function TrainerCalendar() {
 
                       {/* Density dots */}
                       <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                        {Array.from({ length: Math.min(count, 3) }).map((_, idx) => (
-                          <View
-                            key={idx}
-                            style={{
-                              width: 4,
-                              height: 4,
-                              borderRadius: 999,
-                              marginHorizontal: 1,
-                              backgroundColor: isSelectedDay ? '#000' : colors.accent,
-                            }}
-                          />
-                        ))}
+                        {Array.from({ length: Math.min(count, 3) }).map(
+                          (_, idx) => (
+                            <View
+                              key={idx}
+                              style={{
+                                width: 4,
+                                height: 4,
+                                borderRadius: 999,
+                                marginHorizontal: 1,
+                                backgroundColor: isSelectedDay
+                                  ? '#000'
+                                  : colors.accent,
+                              }}
+                            />
+                          )
+                        )}
                       </View>
                     </Pressable>
                   );
@@ -659,7 +776,9 @@ export default function TrainerCalendar() {
                 : 'Session';
               const clientName = item.clients?.name || 'No name';
               const start = dayjs(item.start_at).format('HH:mm');
-              const end = item.end_at ? dayjs(item.end_at).format('HH:mm') : null;
+              const end = item.end_at
+                ? dayjs(item.end_at).format('HH:mm')
+                : null;
               const status = item.status || 'scheduled';
 
               return (
@@ -764,8 +883,10 @@ export default function TrainerCalendar() {
 
                     <View style={{ marginTop: 12 }}>
                       <P>
-                        {start.format('ddd, D MMM YYYY')} • {start.format('HH:mm')} –{' '}
-                        {end.format('HH:mm')}
+                        {start.format('ddd, D MMM YYYY')} • {start.format(
+                          'HH:mm'
+                        )}{' '}
+                        – {end.format('HH:mm')}
                       </P>
                       <P style={{ marginTop: 4 }}>Status: {status}</P>
                       <P style={{ marginTop: 4 }}>Cost: €{price}</P>
